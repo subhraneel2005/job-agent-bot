@@ -1,0 +1,25 @@
+import type { BotCommand } from "grammy/types";
+
+export const BOT_COMMANDS: readonly BotCommand[] = [
+  { command: "start", description: "Start the bot" },
+  { command: "help", description: "Show commands" },
+  { command: "discover", description: "Find new startups now" },
+  { command: "jobs", description: "List saved opportunities" },
+  { command: "draft", description: "Draft outreach for a job" },
+  { command: "send", description: "Send a draft" },
+  { command: "pipeline", description: "Show the pipeline" },
+  { command: "followups", description: "Show or draft follow-ups" },
+  { command: "profile", description: "Show your profile" },
+  { command: "memory", description: "Stats or memory search" },
+  { command: "weekly", description: "Last 7 days summary" },
+  { command: "status", description: "Scheduler and recent runs" },
+  { command: "settings", description: "Runtime settings" },
+  { command: "sources", description: "Manage discovery sources" },
+  { command: "pause", description: "Pause discovery" },
+  { command: "resume", description: "Resume discovery" },
+  { command: "forget", description: "Remove memories" },
+  { command: "backup", description: "Back up the database" },
+  { command: "logs", description: "Run history" },
+  { command: "health", description: "Component checks" },
+  { command: "clear", description: "Clear chat context" },
+];
