@@ -30,7 +30,6 @@ function write(level: Level, message: string, ctx?: LogContext) {
   try {
     appendFileSync(config.logPath, line + "\n");
   } catch {
-    // logging must never crash the agent
   }
 }
 
