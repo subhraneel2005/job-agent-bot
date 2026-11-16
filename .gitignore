@@ -1,6 +1,12 @@
 # dependencies (bun install)
 node_modules
 
+# local agent state
+data/
+
+# local speech models
+models/
+
 # output
 out
 dist
