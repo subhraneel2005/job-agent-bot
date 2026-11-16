@@ -39,6 +39,20 @@ export const config = {
     sttModel: env("OPENCODE_STT_MODEL") ?? "whisper-1",
     timeoutMs: num("OPENCODE_TIMEOUT_MS", 120_000),
   },
+  stt: {
+    provider: (env("STT_PROVIDER") ?? "whispercpp").toLowerCase(),
+    whisperBin: env("WHISPER_CPP_BIN") ?? "whisper-cli",
+    whisperModel: env("WHISPER_CPP_MODEL") ?? join(process.cwd(), "models", "ggml-base.en.bin"),
+    whisperLang: env("WHISPER_CPP_LANG") ?? "en",
+    whisperThreads: num("WHISPER_CPP_THREADS", 4),
+    ffmpegBin: env("FFMPEG_BIN") ?? "ffmpeg",
+    timeoutMs: num("STT_TIMEOUT_MS", 120_000),
+    apiUrl:
+      env("STT_API_URL") ??
+      (env("OPENAI_API_KEY") ? "https://api.openai.com/v1/audio/transcriptions" : ""),
+    apiKey: env("STT_API_KEY") ?? env("OPENAI_API_KEY") ?? "",
+    model: env("STT_MODEL") ?? "whisper-1",
+  },
   allowlist: list("ALLOWED_USER_IDS").map((s) => Number(s)).filter(Number.isFinite),
   timezone: env("TZ") ?? "Asia/Kolkata",
   discovery: {
@@ -47,6 +61,7 @@ export const config = {
     topN: num("DIGEST_TOP_N", 8),
     minFit: num("MIN_FIT", 70),
     maxPerSource: num("MAX_PER_SOURCE", 25),
+    careerScanLimit: num("CAREER_SCAN_LIMIT", 3),
     sources: list("SOURCES"),
     webSearchRss: list("WEB_SEARCH_RSS"),
   },
