@@ -1,194 +1,147 @@
 # job-agent-bot — Feature Build List
 
-The OpenCode Go API is wired up and responding. Everything below is the build-out from "chat wrapper" to a real autonomous job-hunting agent.
+The OpenCode Go API is wired up. This file tracks the build-out from "chat wrapper" to a real autonomous job-hunting agent.
 
-Features are ordered by dependency: each phase is shippable on its own, and later phases assume the earlier ones exist.
+Legend: `[x]` done · `[~]` partial · `[ ]` not done
 
-Legend: `[ ]` todo · `[~]` in progress · `[x]` done
-
----
-
-## Phase 0 — Live progress & reliable messaging (do this first)
-
-Right now the bot goes silent while it thinks. Every long-running action must narrate itself in the chat so we always know what the agent is doing, and what it did.
-
-- [ ] **Status message pattern** — on every request, send one "working" message and **edit it in place** as steps complete (instead of spamming new messages)
-  - Format:
-    ```
-    🔍 Job agent working…
-    ✅ Understood request
-    ⏳ Searching Y Combinator…
-    ⬜ Scoring fit
-    ⬜ Drafting outreach
-    ```
-  - Throttle edits to ≤1 per second and only when the text actually changed (Telegram edit rate limits)
-- [ ] **Step reporting from the agent loop** — each tool/step emits `step.start`, `step.done`, `step.fail` events that the status renderer consumes
-- [ ] **Typing indicator** — `sendChatAction("typing")` kept alive (Telegram clears it after ~5s) during long runs
-- [ ] **Long-message chunking** — split at 4096 chars on word boundaries, preserve code blocks (already partially done)
-- [ ] **Error surfaces** — every failure replies with a short human-readable reason + run id, and logs the full stack
-- [ ] **Final summary message** — replace the status message with a compact result (e.g. "found 6 companies, drafted 3 emails") plus expandable detail
-- [ ] **Message delivery guarantees** — retry on `429` honoring `retry_after`, retry transient network errors, never drop a queued message silently
-- [ ] **Allowlist** — ignore messages from any chat/user not in `ALLOWED_USER_IDS` (this bot will hold your personal data)
-
-**Done when:** a 60-second agent run shows a live, self-updating status message and ends with a clear summary, and no crash ever leaves the chat silent.
+**Status: the full loop is implemented and running.** Remaining gaps are listed at the bottom and are mostly external constraints (Wellfound has no public API, ATS forms vary per provider).
 
 ---
 
-## Phase 1 — Input ingestion (Telegram is the interface)
+## Phase 0 — Live progress & reliable messaging
 
-- [ ] **Text** — already working; route through the agent loop instead of a flat completion prompt
-- [ ] **Voice notes (STT)** — download `.ogg`, transcribe, show "🎤 Transcribed: …" before acting, feed transcript to the agent
-- [ ] **Documents** — accept `.pdf`, `.docx`, `.md`, `.txt`, `.csv`
-  - Extract text, chunk, store in memory + attach as context for the current request
-  - Echo back "📄 Ingested <filename> (n chars)" to confirm
-- [ ] **Images/screenshots** — accept job-listing screenshots, OCR/vision into context
-- [ ] **Forwarded messages** — treat a forwarded job post as a candidate opportunity
-- [ ] **Slash commands**
-  - `/start`, `/clear` (done)
-  - `/profile` — show what the agent currently knows about me
-  - `/jobs` — last discovery digest
-  - `/status` — what's running now
-  - `/pause` · `/resume` — stop/start scheduled discovery
-  - `/sources` — toggle discovery sources
-- [ ] **Inline confirmations** — for any action that sends email/applies, ask with inline buttons `✅ Send / ✏️ Edit / ❌ Skip`
-
-**Done when:** you can talk to the bot by voice, drop a resume PDF, and it confirms what it ingested.
+- [x] **Status message pattern** — one "working" message edited in place as steps complete
+- [x] **Step reporting** — tool calls emit start/done/fail into the status renderer
+- [x] **Typing indicator** — kept alive during long runs
+- [x] **Long-message chunking** — 4096-char split on paragraph/line/word boundaries
+- [x] **Error surfaces** — short reason in chat, full stack + run id in logs
+- [x] **Final summary message** — status is replaced by the result or digest
+- [x] **Message delivery guarantees** — 429/5xx retry with backoff, failed sends queued to the outbox and flushed on startup
+- [x] **Allowlist** — `ALLOWED_USER_IDS` enforced before any handler
 
 ---
 
-## Phase 2 — Memory (the actual differentiator)
+## Phase 1 — Input ingestion
 
-Two local stores, per the architecture.
+- [x] **Text** routed through the tool-calling agent loop
+- [x] **Voice notes (STT)** — local whisper.cpp `base.en` by default (ffmpeg → 16kHz WAV → whisper-cli), with optional API fallback
+- [x] **Documents** — `.pdf`, `.docx`, `.md`, `.txt`, `.csv`
+- [x] **Images/screenshots** — passed to the vision-capable model
+- [x] **Forwarded messages** — prefixed and treated as context
+- [x] **Slash commands** — `/start`, `/clear`, `/profile`, `/jobs`, `/status`, `/pause`, `/resume`, `/sources`, `/discover`, `/draft`, `/send`, `/pipeline`, `/followups`, `/memory`, `/weekly`, `/settings`, `/forget`, `/backup`, `/logs`, `/health`; registered with `setMyCommands` for the `/` menu
+- [x] **Inline confirmations** — `Send / Edit / Skip` on drafts, `Open / Draft / Save / 👍 / 👎 / Skip` on digest items
+- [x] **Conversational revision** — press Edit, reply with the change, get a rewritten draft
 
-### Relational (structured)
-- [ ] Schema: `profile`, `experience`, `skills`, `projects`, `preferences`, `companies_seen`, `opportunities`, `outreach`, `applications`, `runs`
-- [ ] CRUD that the agent can call as tools (`remember_fact`, `update_profile`, `log_opportunity`)
-- [ ] Dedupe opportunities by company + role + source URL
+---
 
-### RAG (semantic)
-- [ ] Embed + index: resume, past write-ups, message history, ingested docs
-- [ ] Retrieval tool the agent calls before scoring/outreach (`recall(query, k)`)
-- [ ] Store **tone samples** (my own writing) so drafts sound like me
-- [ ] Memory inspection: `/profile` renders the relational view; `/memory search <q>` runs retrieval
+## Phase 2 — Memory
 
-- [ ] **Write-through** — every conversation and every "I prefer X" statement is captured automatically, with a review step ("Got it — noted that you want remote-only. Correct?")
-- [ ] **Forget** — `/forget <topic>` removes a memory and its embeddings
+### Relational (SQLite)
+- [x] Schema: users/profile, facts, documents, opportunities, feedback, outreach, pipeline events, runs, settings, outbox
+- [x] Agent tools: `remember_fact`, `update_profile`, `forget`, `mark_opportunity`, `record_feedback`
+- [x] Dedupe opportunities by company + role + URL
+- [x] Experiences/projects/preferences modeled as typed facts
+- [x] Profile derived into search terms (roles, skills, locations, industries, exclusions)
 
-**Done when:** the agent can answer "what kind of role am I looking for and why?" using only its own memory.
+### RAG
+- [x] Dependency-free feature-hashed embeddings + cosine recall
+- [x] Chunked indexing of documents, profile, facts, and conversation history
+- [x] `recall_memory` tool used before scoring and drafting
+- [x] Tone samples stored and used in outreach
+- [x] `/profile`, `/memory`, `/memory search <q>`, `/forget <topic>`
 
 ---
 
 ## Phase 3 — Discovery engine (8:00 AM IST)
 
-- [ ] **Scheduler** — cron at `0 8 * * *` in `Asia/Kolkata` (use a TZ-aware scheduler, not UTC math)
-- [ ] **Source adapters** — one interface, `discover(profile) -> Opportunity[]`:
-  - [ ] Y Combinator (batch + company directory)
-  - [ ] Product Hunt (new launches)
-  - [ ] TechCrunch / funding news (RSS + search)
-  - [ ] Crunchbase (funding rounds)
-  - [ ] Wellfound (startup roles)
-  - [ ] GitHub (org activity / hiring signals)
-  - [ ] Career pages (ATS endpoints: Greenhouse, Lever, Ashby where possible)
-  - [ ] Web search fallback ("raised seed" + "hiring" + role keywords)
-- [ ] **Signal extraction** — normalize each hit into: company, stage, funding event + date, launch date, open roles, source URL, why-it-matters
-- [ ] **Freshness filter** — only keep signals within a configurable window (default 14 days)
-- [ ] **Dedupe + store** — write to `opportunities`, skip ones already seen
-- [ ] **Per-run budget** — cap sources/time/cost, report skipped sources
-- [ ] **Daily digest message** — one Telegram message at 8:00 IST: top N companies, ranked, each with a one-line "why this fits"
-- [ ] **On-demand run** — `/discover now` triggers the same pipeline outside the schedule
-- [ ] **Progress reporting** — the 8 AM run narrates each source as it completes (Phase 0 renderer)
-
-**Done when:** at 8:00 IST every day you get a ranked digest of fresh, funded, hiring startups — and nothing older than the freshness window.
+- [x] **Scheduler** — timezone-aware cron (`Asia/Kolkata`), pause/resume, custom time via `/settings cron HH:MM`
+- [x] **Source adapters** behind one interface:
+  - [x] Y Combinator (recent batches, public company API)
+  - [x] Hacker News ("Who is hiring?" via Algolia)
+  - [x] Product Hunt (launches, Atom)
+  - [x] TechCrunch + Crunchbase News (funding RSS)
+  - [x] Remotive + Remote OK (remote roles)
+  - [x] GitHub (active repos with hiring signals)
+  - [x] Career pages — auto-scanned for live roles + `scan_career_page` tool
+  - [x] Web search (Bing News RSS for "raises" / "hiring" headlines)
+  - [x] Custom RSS (`WEB_SEARCH_RSS`) for anything else
+  - [ ] Wellfound direct adapter — no public API; use a custom feed or manual link
+- [x] **Signal extraction** — company, role, stage, funding/launch date, hiring, source URL, why-it-matters
+- [x] **Freshness filter** — `FRESHNESS_DAYS` (default 14)
+- [x] **Dedupe + store**
+- [x] **Per-run caps** — `MAX_PER_SOURCE`, source timeouts, source error isolation
+- [x] **Daily digest** — ranked, with inline actions
+- [x] **On-demand run** — `/discover` and the `discover_jobs` tool
+- [x] **Progress reporting** — each source reports `found / failed`
 
 ---
 
 ## Phase 4 — Fit scoring & ranking
 
-- [ ] **Scoring rubric** (configurable weights): role match, skills overlap, stage/size preference, location/remote, tech stack, comp band, funding recency
-- [ ] **LLM-as-judge** — for the top ~25 candidates, ask the agent to score fit 0–100 with a 1-sentence rationale, grounded in retrieved memory
-- [ ] **Explainability** — every score stores which memory facts drove it
-- [ ] **Threshold** — only opportunities above `MIN_FIT` (default 70) reach the digest / action queue
-- [ ] **Feedback loop** — `👍 / 👎` inline buttons on each digest item adjust future weights
-- [ ] **Watchlist** — companies I explicitly care about get boosted and re-checked daily
-
-**Done when:** the digest is short, specific, and mostly things I'd actually want to open.
+- [x] **Heuristic rubric** — role, skills, industry, location, exclusions, funding, launch, hiring, freshness, source, feedback
+- [x] **LLM-as-judge** — top candidates re-scored 0–100 with a one-line rationale
+- [x] **Explainability** — rationale stored per opportunity and shown in the digest
+- [x] **Threshold** — `MIN_FIT` (default 70)
+- [x] **Feedback loop** — 👍/👎 buttons adjust future scores
+- [x] **Watchlist** — saved/shortlisted opportunities get a score boost
 
 ---
 
-## Phase 5 — The action layer (act for me)
+## Phase 5 — Action layer
 
-Everything here requires an explicit confirmation (Phase 1 inline buttons) unless I've pre-authorized it.
-
-- [ ] **Draft outreach email** — in my tone (retrieved from memory), referencing the company's funding/launch signal, with my resume attached
-- [ ] **Draft LinkedIn / X DM** — shorter variant
-- [ ] **Find the right contact** — founder/recruiter/hiring manager per company, with confidence + source
-- [ ] **Send** — via an email provider (Resend/Postmark/SMTP) behind a `DRY_RUN` flag
-- [ ] **Application assistance** — fill/queue ATS forms where possible; otherwise produce a ready-to-submit package
-- [ ] **Follow-ups** — cadence (e.g. day 4, day 10), auto-drafted, never auto-sent without opt-in
-- [ ] **Pipeline tracking** — `opportunities → outreach → reply → interview → outcome`, viewable with `/pipeline`
-- [ ] **Action log** — every outbound message stored, so nothing is sent twice and everything is auditable
-
-**Done when:** a morning digest item can become a sent, tone-matched email in two taps.
+- [x] **Draft outreach email** in your tone, referencing the company's signal
+- [x] **Draft LinkedIn DM** (shorter variant)
+- [x] **Contact finding** — scrape company pages for emails, plus common patterns
+- [x] **Send via Resend** behind `DRY_RUN` (default on) and explicit confirmation
+- [x] **Auto-send gate** — agent refuses to send unless `/settings autosend on`
+- [x] **Follow-ups** — `FOLLOW_UP_DAYS` cadence, list or draft
+- [x] **Pipeline tracking** — new → shortlisted → drafted → contacted → replied → interview (or skipped/rejected)
+- [x] **Action log** — every draft, send, and stage change stored
+- [~] **Application assistance** — ready-to-send drafts and career-page role extraction; automatic ATS form submission is not implemented
 
 ---
 
 ## Phase 6 — Reliability & operations
 
-- [ ] **Job queue** — long runs (discovery, applications) run in a queue, not inline in the message handler
-- [ ] **Restart safety** — persist queue + run state so a crash resumes instead of losing work
-- [ ] **Structured logging** — JSON logs with `run_id`, `chat_id`, step timings; `/logs <run_id>` to fetch a run's trail
-- [ ] **Cost & rate control** — token/call budget per run; backoff on provider limits
-- [ ] **Health check** — `/health` reports bot, scheduler, memory DBs, and provider status
-- [ ] **Backups** — nightly snapshot of the relational DB + RAG index
-- [ ] **Config via env** — `ALLOWED_USER_IDS`, `TZ`, `MIN_FIT`, `DRY_RUN`, `CRON_DISCOVERY`, model name, source toggles
-- [ ] **Graceful shutdown** — drain in-flight runs, close DBs, stop scheduler on `SIGINT`/`SIGTERM`
-
-**Done when:** you can kill the process mid-discovery and it resumes cleanly on restart.
+- [x] **Serial work queue** — one agent/discovery task at a time per chat
+- [x] **Self-healing SQLite** — reopens and recreates the schema on `SQLITE_IOERR`/missing-file errors
+- [x] **Structured logs** — JSON logs with run ids under `data/agent.log`
+- [x] **Health check** — `/health`
+- [x] **Backups** — startup + every 12h, last 7 kept in `data/backups`
+- [x] **Config** — env defaults plus DB-backed runtime overrides
+- [x] **Graceful shutdown** — stop scheduler, stop bot, close DB
+- [x] **Run history** — `/logs [runId]`
+- [~] **Restart safety** — runs and the outbox persist; an in-flight agent task is not resumed
+- [~] **Cost control** — step/source caps and request timeouts; no per-day token budget
 
 ---
 
 ## Phase 7 — Polish
 
-- [ ] Markdown-safe Telegram rendering (escape, code blocks, links)
-- [ ] Compact digest cards with inline buttons: `Open · Draft · Save · Skip`
-- [ ] `/settings` menu for sources, cron time, thresholds
-- [ ] Weekly summary: opportunities seen, outreach sent, replies, interviews
-- [ ] Multi-user-ready schema (still allowlisted, but not hard-coded to one chat)
-- [ ] Usage docs in `README.md` as commands land
+- [x] Markdown-safe Telegram HTML rendering + chunking
+- [x] Compact digest cards with inline actions
+- [x] `/settings` menu (dry run, auto-send, min fit, digest size, cron)
+- [x] Weekly summary (`/weekly`)
+- [x] Multi-chat-ready schema (still gated by the allowlist)
+- [x] README, `.env.example`, unit tests, typecheck
 
 ---
 
-## Suggested build order
+## Remaining / known gaps
+
+- **Wellfound** has no public API and blocks scraping; the intended path is a custom RSS feed or manual forwarding.
+- **Voice notes** require `whisper.cpp` + the `base.en` model locally (or set `STT_PROVIDER=auto`/`api` with an API key).
+- **ATS autofill** differs per provider (Greenhouse/Lever/Ashby); the bot produces a ready-to-send package instead.
+- **In-flight resume** would need a durable job queue (currently the queue is in memory).
+- **Token budget** is not enforced per day, only per request/run.
+- **Embeddings** are local and lexical-ish (feature hashing), not a neural embedding model. Swap `memory/rag.ts` for a hosted embedding endpoint if recall quality needs a boost.
+
+---
+
+## Build order used
 
 ```
 Phase 0  →  Phase 1  →  Phase 2  →  Phase 3  →  Phase 4  →  Phase 5
 (visibility) (inputs)   (memory)    (discovery) (ranking)   (actions)
                                     Phase 6 (harden)  →  Phase 7 (polish)
-```
-
-Ship Phase 0 first: it makes every later phase debuggable, because you can watch the agent work instead of guessing.
-
----
-
-## Proposed structure as this grows
-
-```
-job-agent-bot/
-├── index.ts                 # bot bootstrap + handlers
-├── agent/
-│   ├── loop.ts              # request → tools → response
-│   ├── tools.ts             # memory, discover, score, draft, send
-│   └── events.ts            # step events → progress renderer
-├── progress/
-│   └── status.ts            # editable status message, throttling, chunking
-├── memory/
-│   ├── db.ts                # relational store
-│   └── rag.ts               # embeddings + retrieval
-├── discovery/
-│   ├── scheduler.ts         # 8:00 AM IST cron
-│   └── sources/*.ts         # yc, producthunt, crunchbase, wellfound, …
-├── actions/
-│   ├── email.ts             # drafting + sending (DRY_RUN aware)
-│   └── pipeline.ts          # outreach / application tracking
-└── config.ts                # env parsing + defaults
 ```
