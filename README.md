@@ -178,6 +178,23 @@ Then open the bot in Telegram and send `/start`.
 
 ---
 
+## Self-hosting
+
+The bot uses long polling, so it needs **no inbound ports, no public URL, and no reverse proxy**.
+
+For an always-on deployment:
+
+1. Use a small VPS (1 vCPU, 1 GB RAM) or an always-on Mac.
+2. Install Bun, `ffmpeg`, and `whisper.cpp`; clone the repo and run `bun install`.
+3. `cp .env.example .env`, then set `TELEGRAM_BOT_TOKEN`, `OPENCODE_API_KEY`, and `ALLOWED_USER_IDS`.
+4. Run `bun run setup:whisper` and `bun run check`.
+5. Run it under systemd (Linux) or launchd (macOS).
+6. Back up `data/` and keep `DRY_RUN=true` until sending is tested.
+
+Full guide: **[SELF_HOSTING.md](SELF_HOSTING.md)** — server setup, systemd/launchd units, backups, updates, security, and troubleshooting.
+
+---
+
 ## Commands
 
 Typing `/` opens Telegram's inline command menu (registered with `setMyCommands` on startup).
@@ -262,7 +279,7 @@ job-agent-bot/
 │   └── tools.ts              # memory, discovery, scoring, outreach tools
 ├── ai/client.ts              # OpenCode chat completions, JSON, STT
 ├── memory/
-│   ├── db.ts                 # SQLite schema + queries
+│   ├── db.ts                 # SQLite schema + self-healing queries
 │   └── rag.ts                # chunking, embeddings, recall
 ├── discovery/
 │   ├── pipeline.ts           # run adapters → dedupe → score
@@ -270,19 +287,26 @@ job-agent-bot/
 │   ├── digest.ts             # digest text + inline keyboard
 │   ├── scheduler.ts          # timezone-aware cron
 │   ├── profile.ts            # profile → search terms
-│   └── sources/              # yc, hn, remotive, remoteok, github, rss
+│   └── sources/              # yc, hn, remotive, remoteok, github, web, rss
 ├── actions/
 │   ├── contacts.ts           # contact discovery
+│   ├── careers.ts            # career-page role extraction
 │   ├── email.ts              # draft, revise, send
 │   └── pipeline.ts           # follow-ups, weekly summary
 ├── ingest/extract.ts         # PDF, DOCX, CSV, text extraction
-├── runtime/settings.ts       # DB-backed runtime overrides
+├── stt/whispercpp.ts         # local whisper.cpp transcription
+├── runtime/
+│   ├── settings.ts           # DB-backed runtime overrides
+│   └── queue.ts              # per-chat serial queue
 ├── telegram/
 │   ├── progress.ts           # editable status messages
 │   ├── format.ts             # chunking + safe HTML
+│   ├── commands.ts           # slash command menu
 │   └── retry.ts              # 429/5xx retry
 ├── tests/core.test.ts
 ├── data/                     # created at runtime (gitignored)
+├── models/                   # whisper model (gitignored)
+├── SELF_HOSTING.md           # deployment guide
 ├── logo.png
 └── architecture.png
 ```
